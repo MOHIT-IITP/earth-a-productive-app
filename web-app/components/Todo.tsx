@@ -1,67 +1,283 @@
-'use client'
-import { showErrorToast, showSuccessToast } from '@/lib/toastUtils';
-import React, { useState } from 'react'
 
-const Todo = () => {
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    priority: 'MEDIUM',
-    dueDate: '',
-    authorId: '',
-    noteId: '',
-  })
-  const [loading, setLoading] = useState(false);
+import { useState } from 'react';
+import { Plus, MoreHorizontal } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  closestCorners,
+  useSensor,
+  useSensors,
+  PointerSensor,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value })
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true);
-    try {
-      const res = await fetch('/api/todos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      if (!res.ok) throw new Error('Failed to add todo');
-      showSuccessToast('Todo added!');
-      setForm({
-        title: '',
-        description: '',
-        priority: 'MEDIUM',
-        dueDate: '',
-        authorId: '',
-        noteId: '',
-      });
-    } catch (err) {
-      showErrorToast('Error adding todo');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className='mt-20'>
-      <form onSubmit={handleSubmit}>
-        <input name="title" placeholder='Title' value={form.title} onChange={handleChange} />
-        <input name="description" placeholder='Description' value={form.description} onChange={handleChange} />
-        <select name="priority" value={form.priority} onChange={handleChange}>
-          <option value="LOW">LOW</option>
-          <option value="MEDIUM">MEDIUM</option>
-          <option value="HIGH">HIGH</option>
-          <option value="URGENT">URGENT</option>
-        </select>
-        <input name="dueDate" type='date' value={form.dueDate} onChange={handleChange} />
-        <input name="authorId" placeholder='authorId' value={form.authorId} onChange={handleChange} />
-        <input name="noteId" placeholder='Note ID' value={form.noteId} onChange={handleChange} />
-        <button type='submit' disabled={loading}>{loading ? 'Adding...' : 'Add Todo'}</button>
-      </form>
-    </div>
-  )
+interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: 'todo' | 'doing' | 'done';
+  priority: 'low' | 'medium' | 'high';
+  createdAt: Date;
 }
 
-export default Todo
+const SortableTask = ({ task }: { task: Task }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const priorityColors = {
+    low: 'bg-muted text-muted-foreground',
+    medium: 'bg-accent/20 text-accent-foreground',
+    high: 'bg-destructive/20 text-destructive-foreground',
+  };
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`p-4 cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-soft ${
+        isDragging ? 'opacity-50 rotate-1 scale-105' : ''
+      }`}
+    >
+      <div className="flex items-start justify-between mb-2">
+        <h4 className="font-medium text-foreground">{task.title}</h4>
+        <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+      </div>
+      {task.description && (
+        <p className="text-sm text-muted-foreground mb-3">{task.description}</p>
+      )}
+      <div className="flex items-center justify-between">
+        <Badge className={priorityColors[task.priority]} variant="secondary">
+          {task.priority}
+        </Badge>
+        <span className="text-xs text-muted-foreground">
+          {task.createdAt.toLocaleDateString()}
+        </span>
+      </div>
+    </Card>
+  );
+};
+
+const Todo = () => {
+  const [tasks, setTasks] = useState<Task[]>([
+    {
+      id: '1',
+      title: 'Welcome to Earth Todos',
+      description: 'Organize your tasks with this beautiful kanban board',
+      status: 'todo',
+      priority: 'medium',
+      createdAt: new Date(),
+    },
+  ]);
+  const [newTask, setNewTask] = useState({ title: '', description: '' });
+  const [isCreating, setIsCreating] = useState(false);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const task = tasks.find(t => t.id === event.active.id);
+    setActiveTask(task || null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTask(null);
+
+    if (!over) return;
+
+    const activeTask = tasks.find(t => t.id === active.id);
+    if (!activeTask) return;
+
+    const overId = over.id as string;
+    let newStatus: 'todo' | 'doing' | 'done';
+
+    if (['todo-column', 'doing-column', 'done-column'].includes(overId)) {
+      newStatus = overId.replace('-column', '') as 'todo' | 'doing' | 'done';
+    } else {
+      const overTask = tasks.find(t => t.id === overId);
+      if (!overTask) return;
+      newStatus = overTask.status;
+    }
+
+    if (activeTask.status !== newStatus) {
+      setTasks(prev => 
+        prev.map(task => 
+          task.id === active.id 
+            ? { ...task, status: newStatus }
+            : task
+        )
+      );
+    }
+  };
+
+  const createTask = () => {
+    if (newTask.title.trim()) {
+      const task: Task = {
+        id: Date.now().toString(),
+        title: newTask.title,
+        description: newTask.description || undefined,
+        status: 'todo',
+        priority: 'medium',
+        createdAt: new Date(),
+      };
+      setTasks([...tasks, task]);
+      setNewTask({ title: '', description: '' });
+      setIsCreating(false);
+    }
+  };
+
+  const getTasksByStatus = (status: 'todo' | 'doing' | 'done') => {
+    return tasks.filter(task => task.status === status);
+  };
+
+  const Column = ({ 
+    status, 
+    title, 
+    tasks, 
+    className 
+  }: { 
+    status: string;
+    title: string;
+    tasks: Task[];
+    className: string;
+  }) => (
+    <div className={`flex-1 min-h-0 ${className}`}>
+      <div className="mb-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-foreground">{title}</h3>
+          <Badge variant="secondary" className="text-xs">
+            {tasks.length}
+          </Badge>
+        </div>
+      </div>
+      
+      <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+        <div
+          id={`${status}-column`}
+          className="space-y-3 min-h-96 p-4 rounded-xl bg-muted/30 border-2 border-dashed border-border/50 transition-colors duration-200"
+        >
+          {tasks.map(task => (
+            <SortableTask key={task.id} task={task} />
+          ))}
+        </div>
+      </SortableContext>
+    </div>
+  );
+
+  return (
+    <div className="h-full p-6 bg-gradient-to-br from-background via-muted/20 to-background">
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground mb-2">Todos</h2>
+            <p className="text-muted-foreground">Organize your tasks with drag & drop</p>
+          </div>
+          <Button
+            onClick={() => setIsCreating(true)}
+            className="bg-gradient-to-r from-primary to-primary-glow hover:scale-105 transition-transform duration-200"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            New Task
+          </Button>
+        </div>
+
+        {isCreating && (
+          <Card className="mt-4 p-4 bg-card/80 backdrop-blur-sm">
+            <div className="space-y-3">
+              <Input
+                placeholder="Task title..."
+                value={newTask.title}
+                onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) createTask();
+                  if (e.key === 'Escape') setIsCreating(false);
+                }}
+                autoFocus
+              />
+              <Input
+                placeholder="Description (optional)..."
+                value={newTask.description}
+                onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+              />
+              <div className="flex gap-2">
+                <Button onClick={createTask} size="sm">
+                  Create
+                </Button>
+                <Button variant="ghost" onClick={() => setIsCreating(false)} size="sm">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex gap-6 h-full">
+          <Column
+            status="todo"
+            title="Todo"
+            tasks={getTasksByStatus('todo')}
+            className="text-foreground"
+          />
+          <Column
+            status="doing"
+            title="Doing"
+            tasks={getTasksByStatus('doing')}
+            className="text-accent-foreground"
+          />
+          <Column
+            status="done"
+            title="Done"
+            tasks={getTasksByStatus('done')}
+            className="text-primary"
+          />
+        </div>
+
+        <DragOverlay>
+          {activeTask ? <SortableTask task={activeTask} /> : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
+  );
+};
+
+export default Todo;

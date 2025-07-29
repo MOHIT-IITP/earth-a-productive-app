@@ -14,11 +14,15 @@
     "schema": "./db/schema.prisma"
   },
   "dependencies": {
+    "@dnd-kit/sortable": "^10.0.0",
     "@prisma/client": "^6.11.1",
+    "@radix-ui/themes": "^3.2.1",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.50.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dnd-kit": "^0.0.2",
+    "fabric": "^6.7.1",
     "gsap": "^3.13.0",
     "icons-react": "^3.7.1",
     "lucide-react": "^0.525.0",
@@ -28,12 +32,15 @@
     "ogl": "^1.0.11",
     "quill": "^2.0.3",
     "react": "^19.0.0",
+    "react-day-picker": "^9.8.1",
     "react-dom": "^19.0.0",
     "react-hot-toast": "^2.5.2",
+    "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/fabric": "^5.3.10",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
