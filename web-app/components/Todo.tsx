@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Plus, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +13,7 @@ import {
   useSensor,
   useSensors,
   PointerSensor,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -84,7 +84,7 @@ const SortableTask = ({ task }: { task: Task }) => {
   );
 };
 
-const Todo = () => {
+const TodosSection = () => {
   const [tasks, setTasks] = useState<Task[]>([
     {
       id: '1',
@@ -124,14 +124,20 @@ const Todo = () => {
     const overId = over.id as string;
     let newStatus: 'todo' | 'doing' | 'done';
 
-    if (['todo-column', 'doing-column', 'done-column'].includes(overId)) {
+    // Check if dropped on a column
+    if (overId.endsWith('-column')) {
       newStatus = overId.replace('-column', '') as 'todo' | 'doing' | 'done';
     } else {
+      // Check if dropped on another task
       const overTask = tasks.find(t => t.id === overId);
-      if (!overTask) return;
-      newStatus = overTask.status;
+      if (overTask) {
+        newStatus = overTask.status;
+      } else {
+        return; // Invalid drop target
+      }
     }
 
+    // Update task status if it changed
     if (activeTask.status !== newStatus) {
       setTasks(prev => 
         prev.map(task => 
@@ -163,7 +169,7 @@ const Todo = () => {
     return tasks.filter(task => task.status === status);
   };
 
-  const Column = ({ 
+  const DroppableColumn = ({ 
     status, 
     title, 
     tasks, 
@@ -173,29 +179,39 @@ const Todo = () => {
     title: string;
     tasks: Task[];
     className: string;
-  }) => (
-    <div className={`flex-1 min-h-0 ${className}`}>
-      <div className="mb-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-foreground">{title}</h3>
-          <Badge variant="secondary" className="text-xs">
-            {tasks.length}
-          </Badge>
+  }) => {
+    const { setNodeRef, isOver } = useDroppable({
+      id: `${status}-column`,
+    });
+
+    return (
+      <div className={`flex-1 min-h-0 ${className}`}>
+        <div className="mb-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-foreground">{title}</h3>
+            <Badge variant="secondary" className="text-xs">
+              {tasks.length}
+            </Badge>
+          </div>
         </div>
+        
+        <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+          <div
+            ref={setNodeRef}
+            className={`space-y-3 min-h-96 p-4 rounded-xl border-2 border-dashed transition-all duration-200 ${
+              isOver 
+                ? 'bg-primary/10 border-primary/50 shadow-lg' 
+                : 'bg-muted/30 border-border/50'
+            }`}
+          >
+            {tasks.map(task => (
+              <SortableTask key={task.id} task={task} />
+            ))}
+          </div>
+        </SortableContext>
       </div>
-      
-      <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-        <div
-          id={`${status}-column`}
-          className="space-y-3 min-h-96 p-4 rounded-xl bg-muted/30 border-2 border-dashed border-border/50 transition-colors duration-200"
-        >
-          {tasks.map(task => (
-            <SortableTask key={task.id} task={task} />
-          ))}
-        </div>
-      </SortableContext>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="h-full p-6 bg-gradient-to-br from-background via-muted/20 to-background">
@@ -252,19 +268,19 @@ const Todo = () => {
         onDragEnd={handleDragEnd}
       >
         <div className="flex gap-6 h-full">
-          <Column
+          <DroppableColumn
             status="todo"
             title="Todo"
             tasks={getTasksByStatus('todo')}
             className="text-foreground"
           />
-          <Column
+          <DroppableColumn
             status="doing"
             title="Doing"
             tasks={getTasksByStatus('doing')}
             className="text-accent-foreground"
           />
-          <Column
+          <DroppableColumn
             status="done"
             title="Done"
             tasks={getTasksByStatus('done')}
@@ -280,4 +296,4 @@ const Todo = () => {
   );
 };
 
-export default Todo;
+export default TodosSection;
