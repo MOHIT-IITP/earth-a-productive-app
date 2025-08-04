@@ -1,4 +1,4 @@
-import Notes from '@/components/Notes'
+import Notes from '@/components/Notes/Notes'
 import React from 'react'
 
 const Home = () => {
