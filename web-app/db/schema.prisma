@@ -34,6 +34,7 @@ model Todo {
   description String?
   completed   Boolean  @default(false)
   priority    Priority @default(MEDIUM)
+  status      TodoStatus @default(TODO)
   dueDate     DateTime?
   author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   authorId    String
@@ -48,4 +49,10 @@ enum Priority {
   MEDIUM
   HIGH
   URGENT
+}
+
+enum TodoStatus {
+  TODO
+  DOING
+  DONE
 }

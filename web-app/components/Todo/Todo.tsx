@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, MoreHorizontal } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Plus, MoreHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -34,7 +34,7 @@ interface Task {
   createdAt: Date;
 }
 
-const SortableTask = ({ task }: { task: Task }) => {
+const SortableTask = ({ task, onDelete }: { task: Task; onDelete?: (id: string) => void }) => {
   const {
     attributes,
     listeners,
@@ -67,7 +67,23 @@ const SortableTask = ({ task }: { task: Task }) => {
     >
       <div className="flex items-start justify-between mb-2">
         <h4 className="font-medium text-foreground">{task.title}</h4>
-        <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+        <div className="flex items-center gap-2">
+          {onDelete && (
+            <button
+              aria-label="Delete task"
+              className="text-muted-foreground hover:text-destructive transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onDelete(task.id);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+        </div>
       </div>
       {task.description && (
         <p className="text-sm text-muted-foreground mb-3">{task.description}</p>
@@ -85,19 +101,11 @@ const SortableTask = ({ task }: { task: Task }) => {
 };
 
 const TodosSection = () => {
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: '1',
-      title: 'Welcome to Earth Todos',
-      description: 'Organize your tasks with this beautiful kanban board',
-      status: 'todo',
-      priority: 'medium',
-      createdAt: new Date(),
-    },
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [newTask, setNewTask] = useState({ title: '', description: '' });
   const [isCreating, setIsCreating] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -139,34 +147,79 @@ const TodosSection = () => {
 
     // Update task status if it changed
     if (activeTask.status !== newStatus) {
-      setTasks(prev => 
-        prev.map(task => 
-          task.id === active.id 
-            ? { ...task, status: newStatus }
-            : task
-        )
-      );
+      // optimistic update
+      setTasks(prev => prev.map(task => task.id === active.id ? { ...task, status: newStatus } : task));
+      // persist to backend
+      fetch(`/api/todos/${active.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus.toUpperCase() }),
+      }).then(res => {
+        if (!res.ok) throw new Error('Failed to update');
+        return res.json();
+      }).then(updated => {
+        // ensure createdAt remains Date
+        setTasks(prev => prev.map(t => t.id === updated.id ? {
+          id: updated.id,
+          title: updated.title,
+          description: updated.description ?? undefined,
+          status: (String(updated.status).toLowerCase() as 'todo'|'doing'|'done'),
+          priority: (String(updated.priority).toLowerCase() as 'low'|'medium'|'high'),
+          createdAt: new Date(updated.createdAt),
+        } : t));
+      }).catch(() => {
+        // rollback on error
+        setTasks(prev => prev.map(task => task.id === active.id ? { ...task, status: activeTask.status } : task));
+      });
     }
   };
 
-  const createTask = () => {
-    if (newTask.title.trim()) {
+  const createTask = async () => {
+    if (!newTask.title.trim()) return;
+    try {
+      const response = await fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newTask.title,
+          description: newTask.description || undefined,
+          status: 'TODO',
+          priority: 'MEDIUM',
+          completed: false,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to create');
+      const created = await response.json();
       const task: Task = {
-        id: Date.now().toString(),
-        title: newTask.title,
-        description: newTask.description || undefined,
-        status: 'todo',
-        priority: 'medium',
-        createdAt: new Date(),
+        id: created.id,
+        title: created.title,
+        description: created.description ?? undefined,
+        status: (String(created.status).toLowerCase() as 'todo'|'doing'|'done'),
+        priority: (String(created.priority).toLowerCase() as 'low'|'medium'|'high'),
+        createdAt: new Date(created.createdAt),
       };
-      setTasks([...tasks, task]);
+      setTasks(prev => [task, ...prev]);
       setNewTask({ title: '', description: '' });
       setIsCreating(false);
+    } catch (error) {
+      // noop
     }
   };
 
   const getTasksByStatus = (status: 'todo' | 'doing' | 'done') => {
     return tasks.filter(task => task.status === status);
+  };
+
+  const deleteTask = async (id: string) => {
+    const prev = tasks;
+    setTasks(prev => prev.filter(t => t.id !== id));
+    try {
+      const res = await fetch(`/api/todos/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete');
+    } catch (e) {
+      // rollback
+      setTasks(prev);
+    }
   };
 
   const DroppableColumn = ({ 
@@ -205,13 +258,38 @@ const TodosSection = () => {
             }`}
           >
             {tasks.map(task => (
-              <SortableTask key={task.id} task={task} />
+              <SortableTask key={task.id} task={task} onDelete={deleteTask} />
             ))}
           </div>
         </SortableContext>
       </div>
     );
   };
+
+  // Fetch todos on mount
+  useEffect(() => {
+    const fetchTodos = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/todos');
+        if (!response.ok) return; // likely unauthorized
+        const data = await response.json();
+        const mapped: Task[] = (data as any[]).map((t) => ({
+          id: t.id,
+          title: t.title,
+          description: t.description ?? undefined,
+          status: (String(t.status).toLowerCase() as 'todo'|'doing'|'done'),
+          priority: (String(t.priority).toLowerCase() as 'low'|'medium'|'high'),
+          createdAt: new Date(t.createdAt),
+        }));
+        setTasks(mapped);
+      } catch (e) {
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchTodos();
+  }, []);
 
   return (
     <div className="h-full p-6 bg-gradient-to-br from-background via-muted/20 to-background">
@@ -229,6 +307,10 @@ const TodosSection = () => {
             New Task
           </Button>
         </div>
+
+        {isLoading && (
+          <div className="mt-4 text-sm text-muted-foreground">Loading...</div>
+        )}
 
         {isCreating && (
           <Card className="mt-4 p-4 bg-card/80 backdrop-blur-sm">
