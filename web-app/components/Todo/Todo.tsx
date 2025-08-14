@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Plus, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Plus, MoreHorizontal, Trash2, Edit, Save, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -35,7 +36,7 @@ interface Task {
   createdAt: Date;
 }
 
-const SortableTask = ({ task, onDelete, onChangePriority }: { task: Task; onDelete?: (id: string) => void; onChangePriority?: (id: string, priority: Task['priority']) => void }) => {
+const SortableTask = ({ task, onDelete, onChangePriority, isEditing, editTitle, editDescription, onStartEdit, onChangeTitle, onChangeDescription, onSaveEdit, onCancelEdit }: { task: Task; onDelete?: (id: string) => void; onChangePriority?: (id: string, priority: Task['priority']) => void; isEditing?: boolean; editTitle?: string; editDescription?: string; onStartEdit?: (task: Task) => void; onChangeTitle?: (value: string) => void; onChangeDescription?: (value: string) => void; onSaveEdit?: () => void; onCancelEdit?: () => void; }) => {
   const {
     attributes,
     listeners,
@@ -43,11 +44,11 @@ const SortableTask = ({ task, onDelete, onChangePriority }: { task: Task; onDele
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id });
+  } = useSortable({ id: task.id, disabled: Boolean(isEditing) });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: isEditing ? undefined : CSS.Transform.toString(transform),
+    transition: isEditing ? undefined : transition,
   };
 
   const priorityColors = {
@@ -57,38 +58,100 @@ const SortableTask = ({ task, onDelete, onChangePriority }: { task: Task; onDele
     urgent: 'bg-destructive/40 text-black',
   } as const;
 
+  const priorityBackground = {
+    low: 'bg-green-50',
+    medium: 'bg-blue-50',
+    high: 'bg-violet-50',
+    urgent: 'bg-rose-50',
+  } as const;
+
   return (
     <Card
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className={`p-4 cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-soft ${
+      {...(!isEditing ? attributes : undefined)}
+      {...(!isEditing ? listeners : undefined)}
+      className={`p-4 ${
+        isEditing
+          ? 'cursor-default bg-white border-black'
+          : `cursor-grab active:cursor-grabbing ${priorityBackground[task.priority]} border border-zinc-200`
+      } transition-all duration-200 hover:shadow-soft ${
         isDragging ? 'opacity-50 rotate-1 scale-105' : ''
       }`}
     >
       <div className="flex items-start justify-between mb-2">
-        <h4 className="font-medium text-black">{task.title}</h4>
+        {isEditing ? (
+          <Input
+            value={editTitle}
+            onChange={(e) => onChangeTitle && onChangeTitle(e.target.value)}
+            className="text-black bg-white border-black"
+            onPointerDown={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <h4 className="font-medium text-black">{task.title}</h4>
+        )}
         <div className="flex items-center gap-2">
-          {onDelete && (
-            <button
-              aria-label="Delete task"
-              className="text-black hover:text-destructive transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                onDelete(task.id);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+          {isEditing ? (
+            <>
+              <button
+                aria-label="Save task"
+                className="text-black hover:text-foreground transition-colors"
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onSaveEdit && onSaveEdit(); }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <Save className="w-4 h-4" />
+              </button>
+              <button
+                aria-label="Cancel edit"
+                className="text-black hover:text-foreground transition-colors"
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onCancelEdit && onCancelEdit(); }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              {onStartEdit && (
+                <button
+                  aria-label="Edit task"
+                  className="text-black hover:text-foreground transition-colors"
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); onStartEdit(task); }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  aria-label="Delete task"
+                  className="text-black hover:text-destructive transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onDelete(task.id);
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </>
           )}
-          <MoreHorizontal className="w-4 h-4 text-black" />
         </div>
       </div>
-      {task.description && (
-        <p className="text-sm text-black mb-3">{task.description}</p>
+      {isEditing ? (
+        <Textarea
+          value={editDescription}
+          onChange={(e) => onChangeDescription && onChangeDescription(e.target.value)}
+          className="mb-3 text-black bg-white border-black"
+          onPointerDown={(e) => e.stopPropagation()}
+          placeholder="Description (optional)"
+        />
+      ) : (
+        task.description && (
+          <p className="text-sm text-black mb-3">{task.description}</p>
+        )
       )}
       <div className="flex items-center justify-between">
         {onChangePriority ? (
@@ -97,7 +160,11 @@ const SortableTask = ({ task, onDelete, onChangePriority }: { task: Task; onDele
             onValueChange={(val) => onChangePriority(task.id, val as Task['priority'])}
           >
             <SelectTrigger
-              className={`w-[120px] h-7 ${priorityColors[task.priority]} border-0`}
+              className={`w-[120px] h-7 ${
+                isEditing
+                  ? 'bg-white text-black border border-black'
+                  : `${priorityColors[task.priority]} border-0`
+              }`}
               onPointerDown={(e) => e.stopPropagation()}
             >
               <SelectValue placeholder="Priority" />
@@ -128,6 +195,8 @@ const TodosSection = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editFields, setEditFields] = useState<{ title: string; description: string }>({ title: '', description: '' });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -264,6 +333,44 @@ const TodosSection = () => {
     }
   };
 
+  const startEdit = (task: Task) => {
+    setEditingTaskId(task.id);
+    setEditFields({ title: task.title, description: task.description || '' });
+  };
+
+  const cancelEdit = () => {
+    setEditingTaskId(null);
+    setEditFields({ title: '', description: '' });
+  };
+
+  const saveEdit = async () => {
+    if (!editingTaskId) return;
+    const prev = tasks;
+    setTasks(prev => prev.map(t => t.id === editingTaskId ? { ...t, title: editFields.title, description: editFields.description || undefined } : t));
+    try {
+      const res = await fetch(`/api/todos/${editingTaskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editFields.title, description: editFields.description || null }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      const updated = await res.json();
+      setTasks(prev => prev.map(t => t.id === updated.id ? {
+        id: updated.id,
+        title: updated.title,
+        description: updated.description ?? undefined,
+        status: (String(updated.status).toLowerCase() as 'todo'|'doing'|'done'),
+        priority: (String(updated.priority).toLowerCase() as Task['priority']),
+        createdAt: new Date(updated.createdAt),
+      } : t));
+      setEditingTaskId(null);
+      setEditFields({ title: '', description: '' });
+    } catch (e) {
+      setTasks(prev);
+      setEditingTaskId(null);
+    }
+  };
+
   const DroppableColumn = ({ 
     status, 
     title, 
@@ -299,9 +406,25 @@ const TodosSection = () => {
                 : 'bg-muted/30 border-border/50'
             }`}
           >
-            {tasks.map(task => (
-              <SortableTask key={task.id} task={task} onDelete={deleteTask} onChangePriority={changePriority} />
-            ))}
+            {tasks.map(task => {
+              const isEditing = editingTaskId === task.id;
+              return (
+                <SortableTask
+                  key={task.id}
+                  task={task}
+                  onDelete={deleteTask}
+                  onChangePriority={changePriority}
+                  isEditing={isEditing}
+                  editTitle={isEditing ? editFields.title : undefined}
+                  editDescription={isEditing ? editFields.description : undefined}
+                  onStartEdit={startEdit}
+                  onChangeTitle={(v) => setEditFields(prev => ({ ...prev, title: v }))}
+                  onChangeDescription={(v) => setEditFields(prev => ({ ...prev, description: v }))}
+                  onSaveEdit={saveEdit}
+                  onCancelEdit={cancelEdit}
+                />
+              );
+            })}
           </div>
         </SortableContext>
       </div>
