@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -30,11 +31,11 @@ interface Task {
   title: string;
   description?: string;
   status: 'todo' | 'doing' | 'done';
-  priority: 'low' | 'medium' | 'high';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
   createdAt: Date;
 }
 
-const SortableTask = ({ task, onDelete }: { task: Task; onDelete?: (id: string) => void }) => {
+const SortableTask = ({ task, onDelete, onChangePriority }: { task: Task; onDelete?: (id: string) => void; onChangePriority?: (id: string, priority: Task['priority']) => void }) => {
   const {
     attributes,
     listeners,
@@ -50,10 +51,11 @@ const SortableTask = ({ task, onDelete }: { task: Task; onDelete?: (id: string) 
   };
 
   const priorityColors = {
-    low: 'bg-muted text-muted-foreground',
-    medium: 'bg-accent/20 text-accent-foreground',
-    high: 'bg-destructive/20 text-destructive-foreground',
-  };
+    low: 'bg-muted text-black',
+    medium: 'bg-accent/20 text-black',
+    high: 'bg-destructive/20 text-black',
+    urgent: 'bg-destructive/40 text-black',
+  } as const;
 
   return (
     <Card
@@ -66,12 +68,12 @@ const SortableTask = ({ task, onDelete }: { task: Task; onDelete?: (id: string) 
       }`}
     >
       <div className="flex items-start justify-between mb-2">
-        <h4 className="font-medium text-foreground">{task.title}</h4>
+        <h4 className="font-medium text-black">{task.title}</h4>
         <div className="flex items-center gap-2">
           {onDelete && (
             <button
               aria-label="Delete task"
-              className="text-muted-foreground hover:text-destructive transition-colors"
+              className="text-black hover:text-destructive transition-colors"
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -82,17 +84,37 @@ const SortableTask = ({ task, onDelete }: { task: Task; onDelete?: (id: string) 
               <Trash2 className="w-4 h-4" />
             </button>
           )}
-          <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+          <MoreHorizontal className="w-4 h-4 text-black" />
         </div>
       </div>
       {task.description && (
-        <p className="text-sm text-muted-foreground mb-3">{task.description}</p>
+        <p className="text-sm text-black mb-3">{task.description}</p>
       )}
       <div className="flex items-center justify-between">
-        <Badge className={priorityColors[task.priority]} variant="secondary">
-          {task.priority}
-        </Badge>
-        <span className="text-xs text-muted-foreground">
+        {onChangePriority ? (
+          <Select
+            value={task.priority}
+            onValueChange={(val) => onChangePriority(task.id, val as Task['priority'])}
+          >
+            <SelectTrigger
+              className={`w-[120px] h-7 ${priorityColors[task.priority]} border-0`}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent onPointerDown={(e) => e.stopPropagation()}>
+              <SelectItem className='text-black' value="low">Low</SelectItem>
+              <SelectItem className='text-black' value="medium">Medium</SelectItem>
+              <SelectItem className='text-black' value="high">High</SelectItem>
+              <SelectItem className='text-black' value="urgent">Urgent</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <Badge className={priorityColors[task.priority]} variant="secondary">
+            {task.priority}
+          </Badge>
+        )}
+        <span className="text-xs text-black">
           {task.createdAt.toLocaleDateString()}
         </span>
       </div>
@@ -222,6 +244,26 @@ const TodosSection = () => {
     }
   };
 
+  const changePriority = async (id: string, priority: Task['priority']) => {
+    const previous = tasks;
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, priority } : t));
+    try {
+      const res = await fetch(`/api/todos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority: priority.toUpperCase() }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      const updated = await res.json();
+      setTasks(prev => prev.map(t => t.id === updated.id ? {
+        ...t,
+        priority: (String(updated.priority).toLowerCase() as Task['priority']),
+      } : t));
+    } catch (e) {
+      setTasks(previous);
+    }
+  };
+
   const DroppableColumn = ({ 
     status, 
     title, 
@@ -241,8 +283,8 @@ const TodosSection = () => {
       <div className={`flex-1 min-h-0 ${className}`}>
         <div className="mb-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-foreground">{title}</h3>
-            <Badge variant="secondary" className="text-xs">
+            <h3 className="font-semibold text-black">{title}</h3>
+            <Badge variant="secondary" className="text-xs text-black">
               {tasks.length}
             </Badge>
           </div>
@@ -258,7 +300,7 @@ const TodosSection = () => {
             }`}
           >
             {tasks.map(task => (
-              <SortableTask key={task.id} task={task} onDelete={deleteTask} />
+              <SortableTask key={task.id} task={task} onDelete={deleteTask} onChangePriority={changePriority} />
             ))}
           </div>
         </SortableContext>
@@ -292,16 +334,16 @@ const TodosSection = () => {
   }, []);
 
   return (
-    <div className="h-full p-6 bg-gradient-to-br from-background via-muted/20 to-background">
+    <div className="h-full p-6 rounded-xl  bg-white shadow-lg">
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-foreground mb-2">Todos</h2>
-            <p className="text-muted-foreground">Organize your tasks with drag & drop</p>
+            <h2 className="text-2xl font-bold text-black mb-2">Todos</h2>
+            <p className="text-black">Organize your tasks with drag & drop</p>
           </div>
           <Button
             onClick={() => setIsCreating(true)}
-            className="bg-gradient-to-r from-primary to-primary-glow hover:scale-105 transition-transform duration-200"
+            className="bg-gradient-to-r from-primary to-primary-glow hover:scale-105 transition-transform duration-200 text-black"
           >
             <Plus className="w-4 h-4 mr-2" />
             New Task
@@ -309,7 +351,7 @@ const TodosSection = () => {
         </div>
 
         {isLoading && (
-          <div className="mt-4 text-sm text-muted-foreground">Loading...</div>
+          <div className="mt-4 text-sm text-black">Loading...</div>
         )}
 
         {isCreating && (
@@ -331,10 +373,10 @@ const TodosSection = () => {
                 onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
               />
               <div className="flex gap-2">
-                <Button onClick={createTask} size="sm">
+                <Button onClick={createTask} size="sm" className="text-black">
                   Create
                 </Button>
-                <Button variant="ghost" onClick={() => setIsCreating(false)} size="sm">
+                <Button variant="ghost" onClick={() => setIsCreating(false)} size="sm" className="text-black">
                   Cancel
                 </Button>
               </div>
@@ -354,19 +396,19 @@ const TodosSection = () => {
             status="todo"
             title="Todo"
             tasks={getTasksByStatus('todo')}
-            className="text-foreground"
+            className="text-black"
           />
           <DroppableColumn
             status="doing"
             title="Doing"
             tasks={getTasksByStatus('doing')}
-            className="text-accent-foreground"
+            className="text-black"
           />
           <DroppableColumn
             status="done"
             title="Done"
             tasks={getTasksByStatus('done')}
-            className="text-primary"
+            className="text-black"
           />
         </div>
 
